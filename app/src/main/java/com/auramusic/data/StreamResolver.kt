@@ -77,11 +77,17 @@ class StreamResolver @Inject constructor(
         val fallbacks = mutableListOf<AudioStream>()
         runCatching { fallbacks += pipedAll(videoId) }
         runCatching { fallbacks += invidiousAll(videoId) }
-        val unique = fallbacks.distinctBy { it.url }
+        val validated = allValid(fallbacks.map { stream -> suspend { stream } }) { isPlayable(it) }
+        val unique = validated.distinctBy { it.url }
         if (unique.isNotEmpty()) {
             cache[videoId] = Cached(unique, System.currentTimeMillis() + CACHE_TTL_MS)
         }
         return unique
+    }
+
+    suspend fun refresh(videoId: String): AudioStream? {
+        invalidate(videoId)
+        return resolve(videoId).getOrNull()
     }
 
     /** Blocking variant used by the ExoPlayer data-source resolver on its loader thread. */

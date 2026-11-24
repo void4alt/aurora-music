@@ -109,7 +109,50 @@ class InnerTubeClient @Inject constructor(
         numericId = "85"
     )
 
-    private val playerClients = listOf(android, androidVr)
+    private val playerClients = listOf(android)
+
+    @Volatile
+    private var cachedVisitorData: String? = null
+
+    private fun getVisitorData(spec: ClientSpec): String? {
+        cachedVisitorData?.let { return it }
+        return runCatching {
+            val url = "$API_BASE$PATH_VISITOR_ID?key=$PUBLIC_WEB_KEY&prettyPrint=false"
+            val body = JsonObject().apply {
+                val client = JsonObject().apply {
+                    addProperty("clientName", spec.name)
+                    addProperty("clientVersion", spec.version)
+                    addProperty("hl", "en")
+                    addProperty("gl", "US")
+                    spec.extra.forEach { (k, v) ->
+                        when (v) {
+                            is Int -> addProperty(k, v)
+                            is Long -> addProperty(k, v)
+                            is Boolean -> addProperty(k, v)
+                            else -> addProperty(k, v.toString())
+                        }
+                    }
+                }
+                add("context", JsonObject().apply { add("client", client) })
+            }
+            val req = Request.Builder()
+                .url(url)
+                .post(gson.toJson(body).toRequestBody(JSON_MEDIA_TYPE))
+                .header("User-Agent", spec.userAgent)
+                .header("X-YouTube-Client-Name", spec.numericId)
+                .header("X-YouTube-Client-Version", spec.version)
+                .build()
+            fastClient.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return@runCatching null
+                val root = gson.fromJson(resp.body?.string().orEmpty(), JsonObject::class.java)
+                val token = root.obj("responseContext")?.str("visitorData")
+                if (!token.isNullOrBlank()) {
+                    cachedVisitorData = token
+                }
+                token
+            }
+        }.getOrNull()
+    }
 
     suspend fun search(query: String, filter: SearchFilter): List<Song> = withContext(Dispatchers.IO) {
         val effective = if (filter == SearchFilter.MUSIC) "$query music" else query
@@ -177,7 +220,7 @@ class InnerTubeClient @Inject constructor(
             addProperty("contentCheckOk", true)
             addProperty("racyCheckOk", true)
         }
-        val response = runCatching { post("player", body, spec, withKey = false) }.getOrNull()
+        val response = runCatching { post("player", body, spec, withKey = true) }.getOrNull()
             ?: return emptyList()
         val status = response.obj("playabilityStatus")?.str("status")
         if (!status.isNullOrBlank() && status != "OK") return emptyList()
@@ -285,7 +328,7 @@ class InnerTubeClient @Inject constructor(
             add("context", buildContext(web))
             addProperty("videoId", videoId)
         }
-        val response = runCatching { post("player", body, web, withKey = false) }.getOrNull()
+        val response = runCatching { post("player", body, web, withKey = true) }.getOrNull()
             ?: return null
         val details = response.obj("videoDetails") ?: return null
         val id = details.str("videoId") ?: videoId
@@ -326,12 +369,16 @@ class InnerTubeClient @Inject constructor(
     }
 
     private fun buildContext(spec: ClientSpec): JsonObject {
+        val visitor = getVisitorData(spec)
         val client = JsonObject().apply {
             addProperty("clientName", spec.name)
             addProperty("clientVersion", spec.version)
             addProperty("hl", "en")
             addProperty("gl", "US")
             addProperty("utcOffsetMinutes", 0)
+            if (!visitor.isNullOrBlank()) {
+                addProperty("visitorData", visitor)
+            }
             spec.extra.forEach { (key, value) ->
                 when (value) {
                     is Int -> addProperty(key, value)
@@ -352,18 +399,22 @@ class InnerTubeClient @Inject constructor(
     ): JsonObject {
         val url = if (withKey) "$API_BASE$path?key=$PUBLIC_WEB_KEY&prettyPrint=false"
             else "$API_BASE$path?prettyPrint=false"
-        val request = Request.Builder()
+        val reqBuilder = Request.Builder()
             .url(url)
             .post(gson.toJson(body).toRequestBody(JSON_MEDIA_TYPE))
             .header("User-Agent", spec.userAgent)
             .header("X-YouTube-Client-Name", spec.numericId)
             .header("X-YouTube-Client-Version", spec.version)
             .header("Accept-Language", "en-US,en;q=0.9")
-            .build()
-        fastClient.newCall(request).execute().use { response ->
+        cachedVisitorData?.let { reqBuilder.header("X-Goog-Visitor-Id", it) }
+        fastClient.newCall(reqBuilder.build()).execute().use { response ->
             val text = response.body?.string().orEmpty()
             check(response.isSuccessful) { "InnerTube $path failed with HTTP ${response.code}" }
-            return gson.fromJson(text, JsonObject::class.java)
+            val json = gson.fromJson(text, JsonObject::class.java)
+            json.obj("responseContext")?.str("visitorData")?.let {
+                if (it.isNotBlank()) cachedVisitorData = it
+            }
+            return json
         }
     }
 
@@ -448,6 +499,7 @@ class InnerTubeClient @Inject constructor(
     private companion object {
         const val API_BASE = "https://www.youtube.com/youtubei/v1/"
         const val PUBLIC_WEB_KEY = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8"
+        const val PATH_VISITOR_ID = "visitor_id"
         const val MAX_PLAYLIST_PAGES = 12
         val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
     }

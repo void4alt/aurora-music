@@ -81,6 +81,7 @@ class AuroraPlaybackService : MediaSessionService() {
                 pendingReconnect = true
                 scope.launch(Dispatchers.IO) {
                     val stream = streamResolver.nextAlternative(videoId, song?.mediaUrl)
+                        ?: streamResolver.refresh(videoId)
                         ?: streamResolver.loadFallbacks(videoId)
                             .let { streamResolver.nextAlternative(videoId, null) }
                     withContext(Dispatchers.Main) {
@@ -165,6 +166,7 @@ class AuroraPlaybackService : MediaSessionService() {
             .setAllowCrossProtocolRedirects(true)
             .setConnectTimeoutMs(15_000)
             .setReadTimeoutMs(20_000)
+            .setDefaultRequestProperties(mapOf("Accept-Encoding" to "identity"))
         val base = DefaultDataSource.Factory(this, httpFactory)
         return ResolvingDataSource.Factory(base) { dataSpec ->
             val uri = dataSpec.uri
