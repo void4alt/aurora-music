@@ -11,6 +11,7 @@ import com.auramusic.repository.LibraryRepository
 import com.auramusic.repository.MusicRepository
 import com.auramusic.data.repository.LibraryRepositoryImpl
 import com.auramusic.data.repository.MusicRepositoryImpl
+import com.google.gson.Gson
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -67,6 +68,10 @@ object NetworkModule {
         }
         return OkHttpClient.Builder().addInterceptor(logging).build()
     }
+
+    @Provides
+    @Singleton
+    fun provideGson(): Gson = Gson()
 
     @Provides
     @Singleton

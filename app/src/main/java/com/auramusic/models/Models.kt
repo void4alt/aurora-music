@@ -11,7 +11,8 @@ data class Song(
     val source: SongSource = SongSource.YOUTUBE,
     val addedAt: Long = System.currentTimeMillis()
 ) {
-    val isPlayableInApp: Boolean get() = !mediaUrl.isNullOrBlank()
+    val isPlayableInApp: Boolean
+        get() = !mediaUrl.isNullOrBlank() || !videoId.isNullOrBlank()
 }
 
 enum class SongSource { YOUTUBE, DIRECT_URL, LOCAL_FILE }

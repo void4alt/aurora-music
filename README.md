@@ -2,27 +2,26 @@
 
 A native Android music discovery and playback app built with Kotlin, Jetpack Compose, Material 3, Media3/ExoPlayer, Room, Retrofit, Hilt, Coroutines, Flow and DataStore. Dark by default, original branding, no WebView.
 
-## What it does
+## Unlimited, key-free YouTube access
 
-- **Search** YouTube videos using the official YouTube Data API v3 (metadata only).
-- **Discover** trending music, live, remixes and podcast-style content through search categories.
-- **Play** real audio inside the app from **direct audio URLs** and **local audio files** using Media3/ExoPlayer.
-- **Background playback** through a `MediaSessionService` foreground service with a media playback foreground-service type.
-- **Lock-screen and notification controls** via Media3 `MediaSession` and `MediaStyle` notifications.
-- **Playlists, favorites and listening history** persisted in Room.
-- **Player features**: artwork, seek, shuffle, repeat, queue, speed, sleep timer, mini-player, full-screen player.
-- **Settings** persisted with DataStore: recent searches, playback speed, sleep timer, shuffle, repeat, audio quality.
+Aurora does **not** depend on your own YouTube Data API key and does **not** have a per-user daily quota.
 
-## Important: playback honesty
+- **Discovery (search, trending, suggestions)** uses YouTube's own InnerTube endpoints with the public web client — no `YOUTUBE_API_KEY` needed, no 10 000-unit/day ceiling.
+- **Playback** resolves each video through the InnerTube `player` endpoint (ANDROID / VR clients) and plays the returned direct audio stream inside ExoPlayer. If a client withholds a plain URL, the resolver falls back to public Piped and Invidious instances, which serve proxied audio streams.
+- **No ads** — direct audio streams are requested and played; the ad-laden web/iframe player is never used.
+- **No key, no quota, no WebView, no YouTube app handoff.** Background playback, notification and lock-screen controls all work.
 
-YouTube's official Data API returns **metadata, not playable media URLs**. Embedding/iframe playback is a web technology and cannot provide background playback, and extracting stream URLs is against YouTube's terms. Aurora therefore does two distinct things:
+Resolved URLs are cached for one hour. Queue transitions re-resolve automatically through a `ResolvingDataSource`, so old URLs never kill a playlist.
 
-| Content type | Behaviour |
-| --- | --- |
-| YouTube search results (video metadata, thumbnails, channels, durations) | Shown in search/home/explore, saved to playlists and history. Tapping **Play** opens the official YouTube app via `ACTION_VIEW`. `isPlayableInApp = false`. |
-| Direct audio URLs (http/mp3/m4a/HLS) and local files added from your device | Played **inside Aurora** with ExoPlayer, including background playback, notification and lock-screen controls. |
+## Features
 
-This is deliberate: the app never claims that YouTube-only metadata supports background audio.
+- Search videos by title, artist and category; discover trending music.
+- In-app audio playback from YouTube, direct audio URLs and local files.
+- Background playback through a `MediaSessionService` foreground service with a media playback foreground-service type.
+- Lock-screen and notification controls via Media3 `MediaSession` and `MediaStyle` notifications.
+- Playlists, favorites and listening history persisted in Room.
+- Player features: artwork, seek, shuffle, repeat, queue, speed, sleep timer, mini-player, full-screen player.
+- Settings persisted with DataStore: recent searches, playback speed, sleep timer, shuffle, repeat, audio quality.
 
 ## Project structure
 
@@ -31,29 +30,20 @@ app/src/main/java/com/auramusic/
 ├── AuroraApplication.kt
 ├── models/          Domain models
 ├── database/        Room entities, DAOs, database
-├── network/         Retrofit API, DTOs, duration parsing
-├── repository/      Repository contracts
-├── data/            Repository implementations and mappers
+├── network/         InnerTube client, audio stream models, duration parsing
+├── data/            Repository implementations, stream resolver, mappers
 ├── di/              Hilt modules and qualifiers
 ├── settings/        DataStore
-├── playback/        MediaSessionService, custom session commands
+├── playback/        MediaSessionService, resolving data source, custom commands
 ├── player/          MediaController connection, media item mapping, PlayerViewModel
 └── presentation/    Activity, theme, navigation, components, screens + ViewModels
 ```
 
 ## Setup
 
-1. Install **Android Studio** (Hedgehog or newer) with **Android SDK Platform 34**, **Build Tools 34.0.0** and a **JDK 17**.
-2. Create a Google Cloud project, enable **YouTube Data API v3**, and create an API key.
-3. Copy `local.properties.example` to `local.properties` and set:
-   ```properties
-   sdk.dir=/path/to/Android/sdk
-   YOUTUBE_API_KEY=your_real_key_here
-   ```
-   `local.properties` is gitignored — never commit your key.
-4. Open the project folder in Android Studio, let Gradle sync, then run the `app` configuration on a device or emulator running Android 8.0 (API 26) or newer.
-
-If no key is configured, the app still builds and all local-library features work; search/trending display a clear configuration error.
+1. Install **Android Studio** with **Android SDK Platform 34**, **Build Tools 34.0.0** and **JDK 17**.
+2. Copy `local.properties.example` to `local.properties` and set `sdk.dir` to your Android SDK path. No API key is required.
+3. Open the folder, let Gradle sync, run the `app` configuration on Android 8.0 (API 26) or newer.
 
 ## Build from the command line
 
@@ -62,33 +52,16 @@ If no key is configured, the app still builds and all local-library features wor
 ./gradlew assembleRelease
 ```
 
-APKs land in `app/build/outputs/apk/debug/` and `app/build/outputs/apk/release/`.
+APKs land in `app/build/outputs/apk/debug/` and `app/build/outputs/apk/release/`. Ready-to-install copies are also in `artifacts/`.
 
-The included `app/keystore/aurora-release.jks` is a **self-signed demo signing key** and its password is in `local.properties.example`. Replace it with your own keystore before publishing.
+The included `app/keystore/aurora-release.jks` is a **self-signed demo signing key**; replace it before publishing.
 
 ## Permissions
 
-`INTERNET`, `ACCESS_NETWORK_STATE`, `WAKE_LOCK`, `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_MEDIA_PLAYBACK`, `POST_NOTIFICATIONS` (runtime on Android 13+), `READ_MEDIA_AUDIO` / `READ_EXTERNAL_STORAGE` (maxSdk 32). No contacts, location or other unnecessary permissions.
+`INTERNET`, `ACCESS_NETWORK_STATE`, `WAKE_LOCK`, `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_MEDIA_PLAYBACK`, `POST_NOTIFICATIONS` (runtime on Android 13+), `READ_MEDIA_AUDIO` / `READ_EXTERNAL_STORAGE` (maxSdk 32).
 
-## Playback test checklist
+## Notes
 
-1. Start a direct/local track, minimize the app — playback continues.
-2. Open another app — audio continues; notification shows controls.
-3. Turn the screen off — `WAKE_MODE_NETWORK` + foreground service keep it alive.
-4. Lock the phone — lock-screen transport controls respond.
-5. Notification play/pause/next/previous — routed through `MediaSession`.
-6. Bluetooth connect/disconnect — `setHandleAudioBecomingNoisy(true)` pauses on noisy disconnect.
-7. Incoming call — `AudioAttributes.DEFAULT` with audio focus handling ducks/stops playback.
-8. Wi-Fi/mobile switch — ExoPlayer resumes with network error recovery.
-9. Process recreation — queue metadata is restored from persisted library entries where available.
-
-## Known limitations
-
-- YouTube Data API quota is enforced by Google; heavy searching may hit the default daily quota.
-- YouTube metadata items open the official YouTube app for playback rather than playing in-app.
-- Local file URIs are persisted with `FLAG_GRANT_READ_URI_PERMISSION` where the provider allows it.
-- Equalizer integration depends on device support and is not included; speed and sleep timer are.
-
-## License
-
-Original code written for this project. No YouTube Music branding, logos or proprietary assets are used.
+- An internet connection is required to resolve YouTube audio; local files and direct URLs work offline.
+- Public Piped/Invidious instances can come and go; the resolver tries several in sequence.
+- Original code written for this project. No YouTube Music branding, logos or proprietary assets are used.

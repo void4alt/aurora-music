@@ -82,10 +82,6 @@ class PlayerViewModel @Inject constructor(
 
     fun play(song: Song, queue: List<Song> = listOf(song)) {
         val ctrl = controller.value
-        if (!song.isPlayableInApp) {
-            _externalPlay.tryEmit(song)
-            return
-        }
         if (ctrl == null) {
             _message.tryEmit("Player is still connecting")
             return

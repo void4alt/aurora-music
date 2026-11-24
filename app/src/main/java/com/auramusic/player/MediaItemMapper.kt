@@ -16,6 +16,13 @@ private const val KEY_VIDEO_ID = "videoId"
 private const val KEY_MEDIA_URL = "mediaUrl"
 private const val KEY_SOURCE = "source"
 
+/** Custom scheme resolved to a real audio URL by the playback data source. */
+const val STREAM_SCHEME = "aurastream"
+
+fun Song.streamUri(): Uri? =
+    mediaUrl?.takeIf { it.isNotBlank() }?.let(Uri::parse)
+        ?: videoId?.takeIf { it.isNotBlank() }?.let { Uri.parse("$STREAM_SCHEME://yt/$it") }
+
 fun Song.toMediaItem(): MediaItem {
     val extras = Bundle().apply {
         putString(KEY_SONG_ID, id)
@@ -36,7 +43,7 @@ fun Song.toMediaItem(): MediaItem {
         .build()
     return MediaItem.Builder()
         .setMediaId(id)
-        .setUri(mediaUrl)
+        .setUri(streamUri())
         .setMediaMetadata(metadata)
         .build()
 }
