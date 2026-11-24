@@ -10,6 +10,8 @@ import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -38,7 +40,7 @@ class StreamResolver @Inject constructor(
     private val cache = ConcurrentHashMap<String, Cached>()
 
     private val fastClient: OkHttpClient = client.newBuilder()
-        .callTimeout(8, TimeUnit.SECONDS)
+        .callTimeout(6, TimeUnit.SECONDS)
         .build()
 
     private val pipedInstances = listOf(
@@ -61,7 +63,10 @@ class StreamResolver @Inject constructor(
         cache[videoId]?.takeIf { it.expiresAt > System.currentTimeMillis() }
             ?.let { return@runCatching it.stream }
 
-        innerTube.player(videoId).maxByOrNull(::score)?.let { return@runCatching store(it) }
+        val direct = innerTube.player(videoId).sortedByDescending(::score)
+        for (candidate in direct) {
+            if (isPlayable(candidate)) return@runCatching store(candidate)
+        }
 
         fromPiped(videoId)?.let { return@runCatching store(it) }
         fromInvidious(videoId)?.let { return@runCatching store(it) }
@@ -92,24 +97,37 @@ class StreamResolver @Inject constructor(
         }
     }
 
-    private suspend fun fromPiped(videoId: String): AudioStream? {
-        for (base in pipedInstances) {
-            val json = getJson("$base/streams/$videoId") ?: continue
-            val streams = json.arr("audioStreams") ?: continue
-            val best = streams.mapNotNull { it.asJsonObject }
-                .filter { it.str("url") != null }
-                .maxByOrNull(::pipedScore) ?: continue
-            val url = best.str("url") ?: continue
-            return AudioStream(
-                videoId = videoId,
-                url = url,
-                itag = best.str("itag")?.toIntOrNull() ?: 0,
-                mimeType = best.str("mimeType") ?: "audio/mp4",
-                bitrate = best.str("bitrate")?.toLongOrNull() ?: 0L,
-                durationMs = (json.str("duration")?.toLongOrNull() ?: 0L) * 1000L
-            )
-        }
-        return null
+    private suspend fun isPlayable(stream: AudioStream): Boolean = withContext(Dispatchers.IO) {
+        runCatching {
+            val request = Request.Builder()
+                .url(stream.url)
+                .header("Range", "bytes=0-2047")
+                .build()
+            fastClient.newCall(request).execute().use { response ->
+                response.isSuccessful || response.code == 206
+            }
+        }.getOrDefault(false)
+    }
+
+    private suspend fun fromPiped(videoId: String): AudioStream? = firstSuccess(
+        pipedInstances.map { base -> suspend { pipedFrom(base, videoId) } }
+    ) { isPlayable(it) }
+
+    private suspend fun pipedFrom(base: String, videoId: String): AudioStream? {
+        val json = getJson("$base/streams/$videoId") ?: return null
+        val streams = json.arr("audioStreams") ?: return null
+        val best = streams.mapNotNull { it.asJsonObject }
+            .filter { it.str("url") != null }
+            .maxByOrNull(::pipedScore) ?: return null
+        val url = best.str("url") ?: return null
+        return AudioStream(
+            videoId = videoId,
+            url = url,
+            itag = best.str("itag")?.toIntOrNull() ?: 0,
+            mimeType = best.str("mimeType") ?: "audio/mp4",
+            bitrate = best.str("bitrate")?.toLongOrNull() ?: 0L,
+            durationMs = (json.str("duration")?.toLongOrNull() ?: 0L) * 1000L
+        )
     }
 
     private fun pipedScore(obj: JsonObject): Int {
@@ -124,27 +142,43 @@ class StreamResolver @Inject constructor(
         return base + if (obj.str("mimeType").orEmpty().startsWith("audio/mp4")) 10 else 0
     }
 
-    private suspend fun fromInvidious(videoId: String): AudioStream? {
-        for (base in invidiousInstances) {
-            val json = getJson(
-                "$base/api/v1/videos/$videoId?fields=adaptiveFormats,lengthSeconds&local=true"
-            ) ?: continue
-            val streams = json.arr("adaptiveFormats") ?: continue
-            val candidates = streams.mapNotNull { it.asJsonObject }
-                .filter {
-                    it.str("type").orEmpty().startsWith("audio/") && it.str("url") != null
-                }
-            val best = candidates.maxByOrNull(::invidiousScore) ?: continue
-            return AudioStream(
-                videoId = videoId,
-                url = best.str("url") ?: continue,
-                itag = best.str("itag")?.toIntOrNull() ?: 0,
-                mimeType = best.str("type")?.substringBefore(";") ?: "audio/mp4",
-                bitrate = best.str("bitrate")?.toLongOrNull() ?: 0L,
-                durationMs = (json.str("lengthSeconds")?.toLongOrNull() ?: 0L) * 1000L
-            )
+    private suspend fun fromInvidious(videoId: String): AudioStream? = firstSuccess(
+        invidiousInstances.map { base -> suspend { invidiousFrom(base, videoId) } }
+    ) { isPlayable(it) }
+
+    private suspend fun invidiousFrom(base: String, videoId: String): AudioStream? {
+        val json = getJson(
+            "$base/api/v1/videos/$videoId?fields=adaptiveFormats,lengthSeconds&local=true"
+        ) ?: return null
+        val streams = json.arr("adaptiveFormats") ?: return null
+        val candidates = streams.mapNotNull { it.asJsonObject }
+            .filter {
+                it.str("type").orEmpty().startsWith("audio/") && it.str("url") != null
+            }
+        val best = candidates.maxByOrNull(::invidiousScore) ?: return null
+        return AudioStream(
+            videoId = videoId,
+            url = best.str("url") ?: return null,
+            itag = best.str("itag")?.toIntOrNull() ?: 0,
+            mimeType = best.str("type")?.substringBefore(";") ?: "audio/mp4",
+            bitrate = best.str("bitrate")?.toLongOrNull() ?: 0L,
+            durationMs = (json.str("lengthSeconds")?.toLongOrNull() ?: 0L) * 1000L
+        )
+    }
+
+    private suspend fun <T> firstSuccess(
+        tasks: List<suspend () -> T?>,
+        valid: suspend (T) -> Boolean = { true }
+    ): T? = coroutineScope {
+        val deferred = tasks.map { async(Dispatchers.IO) { it() } }
+        for (task in deferred) {
+            val value = task.await()
+            if (value != null && valid(value)) {
+                deferred.forEach { it.cancel() }
+                return@coroutineScope value
+            }
         }
-        return null
+        null
     }
 
     private fun invidiousScore(obj: JsonObject): Int {

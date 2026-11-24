@@ -38,6 +38,10 @@ class InnerTubeClient @Inject constructor(
     private val gson: Gson
 ) {
 
+    private val fastClient: OkHttpClient = client.newBuilder()
+        .callTimeout(8, java.util.concurrent.TimeUnit.SECONDS)
+        .build()
+
     private data class ClientSpec(
         val name: String,
         val version: String,
@@ -140,7 +144,7 @@ class InnerTubeClient @Inject constructor(
                 .url(url)
                 .header("User-Agent", web.userAgent)
                 .build()
-            client.newCall(request).execute().use { response ->
+            fastClient.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) return@runCatching emptyList()
                 val text = response.body?.string().orEmpty()
                 val root = gson.fromJson(text, JsonElement::class.java)
@@ -232,7 +236,7 @@ class InnerTubeClient @Inject constructor(
             .header("X-YouTube-Client-Version", spec.version)
             .header("Accept-Language", "en-US,en;q=0.9")
             .build()
-        client.newCall(request).execute().use { response ->
+        fastClient.newCall(request).execute().use { response ->
             val text = response.body?.string().orEmpty()
             check(response.isSuccessful) { "InnerTube $path failed with HTTP ${response.code}" }
             return gson.fromJson(text, JsonObject::class.java)

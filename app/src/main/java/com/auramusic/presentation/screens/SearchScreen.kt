@@ -30,6 +30,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.auramusic.R
 import com.auramusic.models.SearchFilter
 import com.auramusic.player.PlayerViewModel
+import com.auramusic.presentation.components.AuroraBackground
 import com.auramusic.presentation.components.SectionHeader
 import com.auramusic.presentation.components.SongRow
 
@@ -44,6 +45,7 @@ fun SearchScreen(playerViewModel: PlayerViewModel) {
     val recent by viewModel.recent.collectAsStateWithLifecycle()
     val suggestions by viewModel.suggestions.collectAsStateWithLifecycle()
 
+    AuroraBackground {
     Column(Modifier.fillMaxSize()) {
         OutlinedTextField(
             value = query,
@@ -128,5 +130,6 @@ fun SearchScreen(playerViewModel: PlayerViewModel) {
                 }
             }
         }
+    }
     }
 }

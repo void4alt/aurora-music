@@ -11,7 +11,13 @@ Aurora does **not** depend on your own YouTube Data API key and does **not** hav
 - **No ads** — direct audio streams are requested and played; the ad-laden web/iframe player is never used.
 - **No key, no quota, no WebView, no YouTube app handoff.** Background playback, notification and lock-screen controls all work.
 
-Resolved URLs are cached for one hour. Queue transitions re-resolve automatically through a `ResolvingDataSource`, so old URLs never kill a playlist.
+Resolved URLs are cached for one hour. Queue transitions re-resolve automatically through a `ResolvingDataSource`, so old URLs never kill a playlist. Every resolved URL is range-checked before it is handed to ExoPlayer, and playback failures surface as a snackbar instead of dying silently.
+
+## Look and feel
+
+- Animated aurora gradients behind every screen.
+- Aurora the cat: a Canvas-drawn mascot that bobs, blinks, sways its tail, wears headphones and floats music notes while a track plays.
+- Pulsing album art, animated equalizer bars, staggered song-row entrances, springy play button, slide-up player screen and snackbar feedback.
 
 ## Features
 

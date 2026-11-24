@@ -45,13 +45,10 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
-                LaunchedEffect(Unit) {
-                    playerViewModel.message.collect { }
-                }
-
                 AppNavigation(
                     playerViewModel = playerViewModel,
-                    playerState = playerState
+                    playerState = playerState,
+                    message = playerViewModel.message
                 )
             }
         }

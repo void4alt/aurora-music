@@ -4,7 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.session.MediaController
 import com.auramusic.models.PlayerUiState
 import com.auramusic.models.Song
 import com.auramusic.repository.LibraryRepository
@@ -43,6 +45,7 @@ class PlayerViewModel @Inject constructor(
 
     private var playerListener: Player.Listener? = null
     private var ticker: Job? = null
+    private var pendingPlay: Pair<Song, List<Song>>? = null
 
     init {
         viewModelScope.launch {
@@ -64,10 +67,18 @@ class PlayerViewModel @Inject constructor(
                     override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) = refresh()
                     override fun onRepeatModeChanged(repeatMode: Int) = refresh()
                     override fun onPlaybackParametersChanged(playbackParameters: androidx.media3.common.PlaybackParameters) = refresh()
+                    override fun onPlayerError(error: PlaybackException) {
+                        _message.tryEmit("Playback failed: ${error.message ?: "unknown error"}")
+                        refresh()
+                    }
                 }
                 playerListener = listener
                 ctrl.addListener(listener)
                 refresh()
+                pendingPlay?.let { (song, queue) ->
+                    pendingPlay = null
+                    startPlayback(ctrl, song, queue)
+                }
                 if (ctrl.isPlaying) startTicker()
             }
         }
@@ -83,9 +94,14 @@ class PlayerViewModel @Inject constructor(
     fun play(song: Song, queue: List<Song> = listOf(song)) {
         val ctrl = controller.value
         if (ctrl == null) {
-            _message.tryEmit("Player is still connecting")
+            pendingPlay = song to queue
+            _message.tryEmit("Connecting player…")
             return
         }
+        startPlayback(ctrl, song, queue)
+    }
+
+    private fun startPlayback(ctrl: MediaController, song: Song, queue: List<Song>) {
         val playable = queue.filter { it.isPlayableInApp }
         if (playable.isEmpty()) {
             _externalPlay.tryEmit(song)

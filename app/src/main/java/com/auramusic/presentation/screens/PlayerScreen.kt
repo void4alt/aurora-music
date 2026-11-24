@@ -1,5 +1,8 @@
 package com.auramusic.presentation.screens
 
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -45,6 +48,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
@@ -57,6 +61,10 @@ import com.auramusic.network.formatDuration
 import com.auramusic.player.PlayerViewModel
 import com.auramusic.presentation.theme.AuroraPrimary
 import com.auramusic.presentation.theme.AuroraSecondary
+import com.auramusic.presentation.components.AuroraBackground
+import com.auramusic.presentation.components.CatMascot
+import com.auramusic.presentation.components.EqualizerBars
+import com.auramusic.presentation.components.PulsingArtwork
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -72,7 +80,7 @@ fun PlayerScreen(viewModel: PlayerViewModel, onBack: () -> Unit) {
         if (!dragging) sliderPosition = state.positionMs.toFloat().coerceAtMost(state.durationMs.toFloat())
     }
 
-    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+    AuroraBackground {
         state.currentSong?.thumbnailUrl?.let { url ->
             AsyncImage(
                 model = url,
@@ -107,6 +115,10 @@ fun PlayerScreen(viewModel: PlayerViewModel, onBack: () -> Unit) {
                     textAlign = TextAlign.Center
                 )
                 Spacer(Modifier.size(48.dp))
+                CatMascot(
+                    modifier = Modifier.size(52.dp),
+                    isPlaying = state.isPlaying
+                )
             }
 
             Spacer(Modifier.height(12.dp))
@@ -116,16 +128,20 @@ fun PlayerScreen(viewModel: PlayerViewModel, onBack: () -> Unit) {
                     Modifier
                         .size(260.dp)
                         .clip(RoundedCornerShape(24.dp))
-                        .background(AuroraPrimary.copy(alpha = 0.25f))
-                )
+                        .background(AuroraPrimary.copy(alpha = 0.18f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CatMascot(
+                        modifier = Modifier.size(190.dp),
+                        isPlaying = state.isPlaying
+                    )
+                }
             } else {
-                AsyncImage(
-                    model = artwork,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .size(260.dp)
-                        .clip(RoundedCornerShape(24.dp))
+                PulsingArtwork(
+                    url = artwork,
+                    size = 260.dp,
+                    radius = 28.dp,
+                    isPlaying = state.isPlaying
                 )
             }
 
@@ -137,12 +153,19 @@ fun PlayerScreen(viewModel: PlayerViewModel, onBack: () -> Unit) {
                 textAlign = TextAlign.Center,
                 maxLines = 2
             )
-            Text(
-                song?.artist ?: "Pick something from your library",
-                style = MaterialTheme.typography.bodyLarge,
-                color = AuroraSecondary,
-                textAlign = TextAlign.Center
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                EqualizerBars(
+                    isPlaying = state.isPlaying,
+                    modifier = Modifier.size(width = 20.dp, height = 14.dp)
+                )
+                Spacer(Modifier.size(8.dp))
+                Text(
+                    song?.artist ?: "Pick something from your library",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = AuroraSecondary,
+                    textAlign = TextAlign.Center
+                )
+            }
 
             Spacer(Modifier.height(20.dp))
             Slider(
@@ -162,6 +185,14 @@ fun PlayerScreen(viewModel: PlayerViewModel, onBack: () -> Unit) {
             }
 
             Spacer(Modifier.height(12.dp))
+            val playScale by animateFloatAsState(
+                targetValue = if (state.isPlaying) 1.08f else 1f,
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                    stiffness = Spring.StiffnessMediumLow
+                ),
+                label = "playScale"
+            )
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceEvenly,
@@ -177,7 +208,13 @@ fun PlayerScreen(viewModel: PlayerViewModel, onBack: () -> Unit) {
                 IconButton(onClick = { viewModel.skipPrevious() }) {
                     Icon(Icons.Filled.SkipPrevious, contentDescription = stringResource(R.string.previous), modifier = Modifier.size(36.dp))
                 }
-                IconButton(onClick = { viewModel.togglePlay() }) {
+                IconButton(
+                    onClick = { viewModel.togglePlay() },
+                    modifier = Modifier.graphicsLayer {
+                        scaleX = playScale
+                        scaleY = playScale
+                    }
+                ) {
                     Icon(
                         imageVector = if (state.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                         contentDescription = stringResource(if (state.isPlaying) R.string.pause else R.string.play),
