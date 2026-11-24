@@ -12,6 +12,8 @@ import java.net.URLEncoder
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -161,21 +163,31 @@ class InnerTubeClient @Inject constructor(
      * proxy fallbacks that need no JavaScript deciphering.
      */
     suspend fun player(videoId: String): List<AudioStream> = withContext(Dispatchers.IO) {
-        for (spec in playerClients) {
-            val body = JsonObject().apply {
-                add("context", buildContext(spec))
-                addProperty("videoId", videoId)
-                addProperty("contentCheckOk", true)
-                addProperty("racyCheckOk", true)
+        coroutineScope {
+            val attempts = playerClients.map { spec -> async { playerFrom(spec, videoId) } }
+            for (attempt in attempts) {
+                val streams = attempt.await()
+                if (streams.isNotEmpty()) {
+                    attempts.forEach { it.cancel() }
+                    return@coroutineScope streams
+                }
             }
-            val response = runCatching { post("player", body, spec, withKey = false) }.getOrNull()
-                ?: continue
-            val status = response.obj("playabilityStatus")?.str("status")
-            if (!status.isNullOrBlank() && status != "OK") continue
-            val streams = parseAudioStreams(response, videoId)
-            if (streams.isNotEmpty()) return@withContext streams
+            emptyList()
         }
-        emptyList()
+    }
+
+    private fun playerFrom(spec: ClientSpec, videoId: String): List<AudioStream> {
+        val body = JsonObject().apply {
+            add("context", buildContext(spec))
+            addProperty("videoId", videoId)
+            addProperty("contentCheckOk", true)
+            addProperty("racyCheckOk", true)
+        }
+        val response = runCatching { post("player", body, spec, withKey = false) }.getOrNull()
+            ?: return emptyList()
+        val status = response.obj("playabilityStatus")?.str("status")
+        if (!status.isNullOrBlank() && status != "OK") return emptyList()
+        return parseAudioStreams(response, videoId)
     }
 
     /** Imports a YouTube playlist (or a single video link) as a list of playable songs. */

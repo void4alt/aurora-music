@@ -9,7 +9,8 @@ import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import com.auramusic.models.PlayerUiState
 import com.auramusic.models.Song
-import com.auramusic.data.StreamResolver
+import com.auramusic.models.SongSource
+import com.auramusic.playback.PlaybackStatus
 import com.auramusic.repository.LibraryRepository
 import com.auramusic.settings.SettingsDataStore
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -31,7 +32,7 @@ class PlayerViewModel @Inject constructor(
     private val connection: MediaControllerConnection,
     private val library: LibraryRepository,
     private val settings: SettingsDataStore,
-    private val streamResolver: StreamResolver
+    private val playbackStatus: PlaybackStatus
 ) : ViewModel() {
 
     val controller = connection.controller
@@ -48,9 +49,11 @@ class PlayerViewModel @Inject constructor(
     private var playerListener: Player.Listener? = null
     private var ticker: Job? = null
     private var pendingPlay: Pair<Song, List<Song>>? = null
-    private var retryCount = 0
 
     init {
+        viewModelScope.launch {
+            playbackStatus.events.collect { _message.emit(it) }
+        }
         viewModelScope.launch {
             controller.collectLatest { ctrl ->
                 playerListener?.let { ctrl?.removeListener(it) }
@@ -65,44 +68,12 @@ class PlayerViewModel @Inject constructor(
                         if (isPlaying) startTicker() else ticker?.cancel()
                     }
 
-                    override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                        retryCount = 0
-                        refresh()
-                    }
+                    override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) = refresh()
                     override fun onPlaybackStateChanged(playbackState: Int) = refresh()
                     override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) = refresh()
                     override fun onRepeatModeChanged(repeatMode: Int) = refresh()
                     override fun onPlaybackParametersChanged(playbackParameters: androidx.media3.common.PlaybackParameters) = refresh()
-                    override fun onPlayerError(error: PlaybackException) {
-                        val current = ctrl.currentMediaItem?.toSong()
-                        val id = current?.videoId
-                        if (id != null && retryCount < 1) {
-                            retryCount++
-                            streamResolver.invalidate(id)
-                            viewModelScope.launch {
-                                val stream = streamResolver.resolve(id).getOrNull()
-                                if (stream != null && current != null) {
-                                    val index = ctrl.currentMediaItemIndex.coerceAtLeast(0)
-                                    val position = ctrl.currentPosition
-                                    val items = (0 until ctrl.mediaItemCount).map { i ->
-                                        ctrl.getMediaItemAt(i)
-                                    }.toMutableList()
-                                    if (index < items.size) {
-                                        items[index] = current.copy(mediaUrl = stream.url).toMediaItem()
-                                    }
-                                    ctrl.setMediaItems(items, index, position)
-                                    ctrl.prepare()
-                                    ctrl.play()
-                                    _message.tryEmit("Reconnected — playing now")
-                                } else {
-                                    _message.tryEmit("Playback failed: ${error.message ?: "source error"}")
-                                }
-                            }
-                        } else {
-                            _message.tryEmit("Playback failed: ${error.message ?: "source error"}")
-                        }
-                        refresh()
-                    }
+                    override fun onPlayerError(error: PlaybackException) = refresh()
                 }
                 playerListener = listener
                 ctrl.addListener(listener)
@@ -130,23 +101,15 @@ class PlayerViewModel @Inject constructor(
             _message.tryEmit("Connecting player…")
             return
         }
-        viewModelScope.launch {
-            val resolved = song.videoId?.let { streamResolver.resolve(it).getOrNull() }
-            if (song.videoId != null && resolved == null) {
-                _message.tryEmit("Stream unavailable — trying an alternate source")
-            }
-            retryCount = 0
-            startPlayback(
-                ctrl = ctrl,
-                song = resolved?.let { song.copy(mediaUrl = it.url) } ?: song,
-                queue = queue
-            )
-        }
+        startPlayback(ctrl = ctrl, song = song, queue = queue)
     }
 
     private fun startPlayback(ctrl: MediaController, song: Song, queue: List<Song>) {
         val playable = queue.filter { it.isPlayableInApp }
-            .map { if (it.id == song.id) song else it }
+            .map { item ->
+                val base = if (item.id == song.id) song else item
+                if (base.source == SongSource.YOUTUBE) base.copy(mediaUrl = null) else base
+            }
         if (playable.isEmpty()) {
             _externalPlay.tryEmit(song)
             return

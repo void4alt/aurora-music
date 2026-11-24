@@ -65,9 +65,8 @@ class StreamResolver @Inject constructor(
             ?.let { return@runCatching it.stream }
 
         val direct = innerTube.player(videoId).sortedByDescending(::score)
-        for (candidate in direct) {
-            if (isPlayable(candidate)) return@runCatching store(candidate)
-        }
+        firstSuccess(direct.map { candidate -> suspend { candidate.takeIf { isPlayable(it) } } })
+            ?.let { return@runCatching store(it) }
 
         fromPiped(videoId)?.let { return@runCatching store(it) }
         fromInvidious(videoId)?.let { return@runCatching store(it) }
@@ -76,7 +75,7 @@ class StreamResolver @Inject constructor(
     }
 
     /** Blocking variant used by the ExoPlayer data-source resolver on its loader thread. */
-    fun resolveBlocking(videoId: String, timeoutMs: Long = 30_000L): AudioStream? =
+    fun resolveBlocking(videoId: String, timeoutMs: Long = 60_000L): AudioStream? =
         runBlocking(Dispatchers.IO) {
             withTimeoutOrNull(timeoutMs) { resolve(videoId).getOrNull() }
         }

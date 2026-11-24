@@ -51,6 +51,19 @@ fun Song.toMediaItem(): MediaItem {
         .build()
 }
 
+/** Rebuilds a YouTube item with a fresh placeholder so the data source resolves again. */
+fun Song.toRetryMediaItem(): MediaItem {
+    val item = toMediaItem()
+    val uri = item.localConfiguration?.uri
+    return if (uri?.host == STREAM_HOST) {
+        item.buildUpon()
+            .setUri(uri.buildUpon().appendQueryParameter("retry", System.currentTimeMillis().toString()).build())
+            .build()
+    } else {
+        item
+    }
+}
+
 fun MediaItem.toSong(): Song? {
     val extras = mediaMetadata.extras ?: return null
     val id = extras.getString(KEY_SONG_ID) ?: mediaId
