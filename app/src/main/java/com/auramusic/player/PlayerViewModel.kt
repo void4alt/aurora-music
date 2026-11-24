@@ -98,6 +98,7 @@ class PlayerViewModel @Inject constructor(
         val ctrl = controller.value
         if (ctrl == null) {
             pendingPlay = song to queue
+            connection.connect()
             _message.tryEmit("Connecting player…")
             return
         }
@@ -122,8 +123,31 @@ class PlayerViewModel @Inject constructor(
     }
 
     fun togglePlay() {
-        val ctrl = controller.value ?: return
-        if (ctrl.isPlaying) ctrl.pause() else ctrl.play()
+        val ctrl = controller.value
+        if (ctrl == null) {
+            connection.connect()
+            _message.tryEmit("Connecting player…")
+            return
+        }
+        if (ctrl.isPlaying) {
+            ctrl.pause()
+        } else {
+            if (ctrl.mediaItemCount == 0) {
+                val song = _state.value.currentSong
+                if (song != null) {
+                    play(song)
+                    return
+                }
+                _message.tryEmit("Select a track to start playback")
+                return
+            }
+            if (ctrl.playbackState == Player.STATE_IDLE) {
+                ctrl.prepare()
+            } else if (ctrl.playbackState == Player.STATE_ENDED) {
+                ctrl.seekTo(0, 0L)
+            }
+            ctrl.play()
+        }
     }
 
     fun skipNext() = controller.value?.seekToNextMediaItem()

@@ -69,16 +69,18 @@ class StreamResolver @Inject constructor(
             ?.let { return it.streams }
 
         val direct = innerTube.player(videoId).sortedByDescending(::score)
-        val validated = allValid(direct.map { candidate -> suspend { candidate } }) { isPlayable(it) }
-            .toMutableList()
-
-        if (validated.isEmpty()) {
-            validated += pipedAll(videoId)
-            validated += invidiousAll(videoId)
+        if (direct.isNotEmpty()) {
+            cache[videoId] = Cached(direct, System.currentTimeMillis() + CACHE_TTL_MS)
+            return direct
         }
 
-        val unique = validated.distinctBy { it.url }
-        cache[videoId] = Cached(unique, System.currentTimeMillis() + CACHE_TTL_MS)
+        val fallbacks = mutableListOf<AudioStream>()
+        runCatching { fallbacks += pipedAll(videoId) }
+        runCatching { fallbacks += invidiousAll(videoId) }
+        val unique = fallbacks.distinctBy { it.url }
+        if (unique.isNotEmpty()) {
+            cache[videoId] = Cached(unique, System.currentTimeMillis() + CACHE_TTL_MS)
+        }
         return unique
     }
 
@@ -113,10 +115,11 @@ class StreamResolver @Inject constructor(
     }
 
     private fun score(stream: AudioStream): Int = when (stream.itag) {
-        140 -> 100
-        251 -> 95
-        250 -> 90
-        249 -> 85
+        140 -> 100 // m4a 128k - hardware accelerated on all Android devices
+        251 -> 95  // opus 160k
+        250 -> 90  // opus 70k
+        249 -> 85  // opus 50k
+        139 -> 80  // m4a 48k
         else -> when {
             stream.mimeType.startsWith("audio/mp4") -> 70
             stream.mimeType.startsWith("audio/webm") -> 60

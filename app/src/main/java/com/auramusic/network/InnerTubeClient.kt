@@ -109,7 +109,7 @@ class InnerTubeClient @Inject constructor(
         numericId = "85"
     )
 
-    private val playerClients = listOf(android, ios, androidVr, tvEmbedded)
+    private val playerClients = listOf(android, androidVr)
 
     suspend fun search(query: String, filter: SearchFilter): List<Song> = withContext(Dispatchers.IO) {
         val effective = if (filter == SearchFilter.MUSIC) "$query music" else query
@@ -163,17 +163,11 @@ class InnerTubeClient @Inject constructor(
      * proxy fallbacks that need no JavaScript deciphering.
      */
     suspend fun player(videoId: String): List<AudioStream> = withContext(Dispatchers.IO) {
-        coroutineScope {
-            val attempts = playerClients.map { spec -> async { playerFrom(spec, videoId) } }
-            for (attempt in attempts) {
-                val streams = attempt.await()
-                if (streams.isNotEmpty()) {
-                    attempts.forEach { it.cancel() }
-                    return@coroutineScope streams
-                }
-            }
-            emptyList()
+        for (spec in playerClients) {
+            val streams = playerFrom(spec, videoId)
+            if (streams.isNotEmpty()) return@withContext streams
         }
+        emptyList()
     }
 
     private fun playerFrom(spec: ClientSpec, videoId: String): List<AudioStream> {

@@ -24,6 +24,11 @@ class MediaControllerConnection @Inject constructor(
     val controller: StateFlow<MediaController?> = _controller.asStateFlow()
 
     init {
+        connect()
+    }
+
+    fun connect() {
+        if (_controller.value != null) return
         val future = MediaController.Builder(context, token).buildAsync()
         Futures.addCallback(
             future,

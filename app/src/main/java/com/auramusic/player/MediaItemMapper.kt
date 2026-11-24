@@ -52,17 +52,21 @@ fun Song.toMediaItem(): MediaItem {
 }
 
 fun MediaItem.toSong(): Song? {
-    val extras = mediaMetadata.extras ?: return null
-    val id = extras.getString(KEY_SONG_ID) ?: mediaId
+    val extras = mediaMetadata.extras
+    val id = extras?.getString(KEY_SONG_ID)?.takeIf { it.isNotBlank() }
+        ?: mediaId.takeIf { it.isNotBlank() }
+        ?: return null
+    val videoId = extras?.getString(KEY_VIDEO_ID)
+        ?: if (id.startsWith("yt_")) id.removePrefix("yt_") else null
     return Song(
         id = id,
-        title = extras.getString(KEY_TITLE) ?: mediaMetadata.title?.toString() ?: "Untitled",
-        artist = extras.getString(KEY_ARTIST) ?: mediaMetadata.artist?.toString() ?: "Unknown artist",
-        thumbnailUrl = extras.getString(KEY_THUMB),
-        durationMs = extras.getLong(KEY_DURATION, 0L),
-        videoId = extras.getString(KEY_VIDEO_ID),
-        mediaUrl = extras.getString(KEY_MEDIA_URL),
-        source = runCatching { SongSource.valueOf(extras.getString(KEY_SOURCE) ?: "YOUTUBE") }
+        title = extras?.getString(KEY_TITLE) ?: mediaMetadata.title?.toString() ?: "Untitled",
+        artist = extras?.getString(KEY_ARTIST) ?: mediaMetadata.artist?.toString() ?: "Unknown artist",
+        thumbnailUrl = extras?.getString(KEY_THUMB) ?: mediaMetadata.artworkUri?.toString(),
+        durationMs = extras?.getLong(KEY_DURATION, 0L) ?: 0L,
+        videoId = videoId,
+        mediaUrl = extras?.getString(KEY_MEDIA_URL),
+        source = runCatching { SongSource.valueOf(extras?.getString(KEY_SOURCE) ?: "YOUTUBE") }
             .getOrDefault(SongSource.YOUTUBE)
     )
 }
