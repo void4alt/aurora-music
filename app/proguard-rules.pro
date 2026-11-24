@@ -1,0 +1,5 @@
+-keep class com.auramusic.models.** { *; }
+-keep class com.auramusic.network.dto.** { *; }
+-keep class com.auramusic.database.** { *; }
+-dontwarn okhttp3.**
+-dontwarn retrofit2.**

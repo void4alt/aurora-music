@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Aurora Music</string>
+    <string name="home">Home</string>
+    <string name="explore">Explore</string>
+    <string name="search">Search</string>
+    <string name="library">Library</string>
+    <string name="search_placeholder">Search songs, artists, live…</string>
+    <string name="play">Play</string>
+    <string name="pause">Pause</string>
+    <string name="next">Next</string>
+    <string name="previous">Previous</string>
+    <string name="shuffle">Shuffle</string>
+    <string name="repeat">Repeat</string>
+    <string name="favorite">Favorite</string>
+    <string name="queue">Queue</string>
+    <string name="open_in_youtube">Open in YouTube</string>
+    <string name="no_results">No results found</string>
+    <string name="something_wrong">Something went wrong</string>
+    <string name="empty_library">Your library is empty. Save songs you love.</string>
+    <string name="missing_api_key">Add your YouTube Data API key in local.properties to enable search.</string>
+    <string name="recent_searches">Recent searches</string>
+    <string name="playlists">Playlists</string>
+    <string name="create_playlist">Create playlist</string>
+    <string name="new_playlist">New playlist</string>
+    <string name="playlist_name">Playlist name</string>
+    <string name="cancel">Cancel</string>
+    <string name="save">Save</string>
+    <string name="delete">Delete</string>
+    <string name="rename">Rename</string>
+    <string name="favorites">Favorites</string>
+    <string name="history">History</string>
+    <string name="add_to_playlist">Add to playlist</string>
+    <string name="sleep_timer">Sleep timer</string>
+    <string name="playback_speed">Playback speed</string>
+    <string name="settings">Settings</string>
+    <string name="offline">Offline</string>
+    <string name="now_playing">Now playing</string>
+    <string name="direct_playback_hint">This item is metadata-only. Add a direct audio URL or a local file to play it inside Aurora.</string>
+</resources>
