@@ -26,6 +26,8 @@ Resolved URLs are cached for one hour. Queue transitions re-resolve automaticall
 - Background playback through a `MediaSessionService` foreground service with a media playback foreground-service type.
 - Lock-screen and notification controls via Media3 `MediaSession` and `MediaStyle` notifications.
 - Playlists, favorites and listening history persisted in Room.
+- Add any song to a playlist from Home, Search, Explore, Library and the full player; create playlists on the fly.
+- Import a YouTube playlist or video link in Library — paste a `youtube.com/playlist?list=...` link and every track becomes a playable song. Both compact and full playlists are followed across continuation pages.
 - Player features: artwork, seek, shuffle, repeat, queue, speed, sleep timer, mini-player, full-screen player.
 - Settings persisted with DataStore: recent searches, playback speed, sleep timer, shuffle, repeat, audio quality.
 

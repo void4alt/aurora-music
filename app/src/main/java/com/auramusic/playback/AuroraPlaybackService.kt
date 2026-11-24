@@ -6,13 +6,15 @@ import android.net.Uri
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import com.auramusic.data.StreamResolver
-import com.auramusic.player.STREAM_SCHEME
+import com.auramusic.player.STREAM_HOST
+import com.auramusic.player.STREAM_USER_AGENT
 import com.auramusic.presentation.MainActivity
 import com.auramusic.settings.SettingsDataStore
 import dagger.hilt.android.AndroidEntryPoint
@@ -82,10 +84,14 @@ class AuroraPlaybackService : MediaSessionService() {
      * loaded (including auto-advance through the queue) it is swapped for a fresh, directly
      * playable audio URL.
      */
-    private fun streamDataSourceFactory(): ResolvingDataSource.Factory =
-        ResolvingDataSource.Factory(DefaultDataSource.Factory(this)) { dataSpec ->
+    private fun streamDataSourceFactory(): ResolvingDataSource.Factory {
+        val httpFactory = DefaultHttpDataSource.Factory()
+            .setUserAgent(STREAM_USER_AGENT)
+            .setAllowCrossProtocolRedirects(true)
+        val base = DefaultDataSource.Factory(this, httpFactory)
+        return ResolvingDataSource.Factory(base) { dataSpec ->
             val uri = dataSpec.uri
-            if (uri.scheme == STREAM_SCHEME) {
+            if (uri.host == STREAM_HOST) {
                 val videoId = uri.lastPathSegment
                     ?: throw IOException("Missing video id in $uri")
                 val stream = streamResolver.resolveBlocking(videoId)
@@ -95,6 +101,7 @@ class AuroraPlaybackService : MediaSessionService() {
                 dataSpec
             }
         }
+    }
 
     override fun onDestroy() {
         sleepJob?.cancel()

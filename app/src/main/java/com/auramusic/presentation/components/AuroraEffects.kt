@@ -264,7 +264,8 @@ fun HomeHero(
             }
             CatMascot(
                 modifier = Modifier.size(112.dp),
-                isPlaying = isPlaying
+                isPlaying = isPlaying,
+                onClick = {}
             )
         }
     }

@@ -61,6 +61,7 @@ import com.auramusic.network.formatDuration
 import com.auramusic.player.PlayerViewModel
 import com.auramusic.presentation.theme.AuroraPrimary
 import com.auramusic.presentation.theme.AuroraSecondary
+import com.auramusic.presentation.components.AddToPlaylistButton
 import com.auramusic.presentation.components.AuroraBackground
 import com.auramusic.presentation.components.CatMascot
 import com.auramusic.presentation.components.EqualizerBars
@@ -117,7 +118,8 @@ fun PlayerScreen(viewModel: PlayerViewModel, onBack: () -> Unit) {
                 Spacer(Modifier.size(48.dp))
                 CatMascot(
                     modifier = Modifier.size(52.dp),
-                    isPlaying = state.isPlaying
+                    isPlaying = state.isPlaying,
+                    onClick = {}
                 )
             }
 
@@ -242,6 +244,7 @@ fun PlayerScreen(viewModel: PlayerViewModel, onBack: () -> Unit) {
                 IconButton(onClick = { song?.let { viewModel.toggleFavorite(it) } }) {
                     Icon(Icons.Filled.Favorite, contentDescription = stringResource(R.string.favorite))
                 }
+                song?.let { AddToPlaylistButton(it) }
                 IconButton(onClick = { showSpeed = true }) {
                     Icon(Icons.Filled.Speed, contentDescription = stringResource(R.string.playback_speed))
                 }

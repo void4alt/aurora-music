@@ -29,6 +29,11 @@ data class PlaylistWithSongs(
     val songs: List<Song>
 )
 
+data class ImportedPlaylist(
+    val name: String,
+    val songs: List<Song>
+)
+
 enum class SearchFilter(val apiValue: String?) {
     ALL(null),
     MUSIC("music"),

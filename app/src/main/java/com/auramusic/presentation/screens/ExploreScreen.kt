@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.auramusic.player.PlayerViewModel
+import com.auramusic.presentation.components.AddToPlaylistButton
 import com.auramusic.presentation.components.SongRow
 import com.auramusic.presentation.theme.AuroraPrimary
 import com.auramusic.presentation.theme.AuroraSecondary
@@ -93,7 +94,13 @@ fun ExploreScreen(playerViewModel: PlayerViewModel) {
             }
             LazyColumn {
                 items(results, key = { it.id }) { song ->
-                    SongRow(song.title, song.artist, song.thumbnailUrl, song.durationMs) {
+                    SongRow(
+                        song.title,
+                        song.artist,
+                        song.thumbnailUrl,
+                        song.durationMs,
+                        trailing = { AddToPlaylistButton(song) }
+                    ) {
                         playerViewModel.play(song, results)
                     }
                 }

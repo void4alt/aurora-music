@@ -2,14 +2,17 @@ package com.auramusic.presentation.screens
 
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -21,6 +24,7 @@ import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -34,6 +38,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -49,6 +54,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.auramusic.R
 import com.auramusic.player.PlayerViewModel
+import com.auramusic.presentation.components.AddToPlaylistButton
 import com.auramusic.presentation.components.SongRow
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -69,6 +75,14 @@ fun LibraryScreen(playerViewModel: PlayerViewModel) {
     var showUrlDialog by remember { mutableStateOf(false) }
     var urlTitle by remember { mutableStateOf("") }
     var urlValue by remember { mutableStateOf("") }
+    var linkInput by remember { mutableStateOf("") }
+    var showLinkDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        viewModel.message.collect { message ->
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        }
+    }
 
     val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) {
@@ -102,8 +116,11 @@ fun LibraryScreen(playerViewModel: PlayerViewModel) {
                         thumbnailUrl = song.thumbnailUrl,
                         durationMs = song.durationMs,
                         trailing = {
-                            IconButton(onClick = { viewModel.removeFromPlaylist(detail.playlist.id, song.id) }) {
-                                Icon(Icons.Filled.Delete, contentDescription = "Remove")
+                            Row {
+                                AddToPlaylistButton(song)
+                                IconButton(onClick = { viewModel.removeFromPlaylist(detail.playlist.id, song.id) }) {
+                                    Icon(Icons.Filled.Delete, contentDescription = "Remove")
+                                }
                             }
                         }
                     ) { playerViewModel.play(song, detail.songs) }
@@ -129,6 +146,12 @@ fun LibraryScreen(playerViewModel: PlayerViewModel) {
                 }
                 IconButton(onClick = { showUrlDialog = true }) {
                     Icon(Icons.Filled.Link, contentDescription = "Add audio URL")
+                }
+                IconButton(onClick = {
+                    linkInput = ""
+                    showLinkDialog = true
+                }) {
+                    Icon(Icons.Filled.PlaylistAdd, contentDescription = "Import playlist link")
                 }
             }
         )
@@ -180,7 +203,13 @@ fun LibraryScreen(playerViewModel: PlayerViewModel) {
                     } }
                 }
                 items(favorites, key = { "fav_${it.id}" }) { song ->
-                    SongRow(song.title, song.artist, song.thumbnailUrl, song.durationMs) {
+                    SongRow(
+                        song.title,
+                        song.artist,
+                        song.thumbnailUrl,
+                        song.durationMs,
+                        trailing = { AddToPlaylistButton(song) }
+                    ) {
                         playerViewModel.play(song, favorites)
                     }
                 }
@@ -194,7 +223,13 @@ fun LibraryScreen(playerViewModel: PlayerViewModel) {
                     }
                 }
                 items(history, key = { "hist_${it.id}" }) { song ->
-                    SongRow(song.title, song.artist, song.thumbnailUrl, song.durationMs) {
+                    SongRow(
+                        song.title,
+                        song.artist,
+                        song.thumbnailUrl,
+                        song.durationMs,
+                        trailing = { AddToPlaylistButton(song) }
+                    ) {
                         playerViewModel.play(song, history)
                     }
                 }
@@ -258,6 +293,39 @@ fun LibraryScreen(playerViewModel: PlayerViewModel) {
             },
             dismissButton = {
                 TextButton(onClick = { showUrlDialog = false }) { Text(stringResource(R.string.cancel)) }
+            }
+        )
+    }
+
+    if (showLinkDialog) {
+        AlertDialog(
+            onDismissRequest = { showLinkDialog = false },
+            title = { Text("Import playlist link") },
+            text = {
+                Column {
+                    Text(
+                        "Paste a YouTube playlist link, YouTube Music link, or a single video link.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = linkInput,
+                        onValueChange = { linkInput = it },
+                        label = { Text("Playlist link") },
+                        placeholder = { Text("https://youtube.com/playlist?list=...") },
+                        singleLine = true
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.importPlaylist(linkInput)
+                    showLinkDialog = false
+                }) { Text("Import") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLinkDialog = false }) { Text(stringResource(R.string.cancel)) }
             }
         )
     }

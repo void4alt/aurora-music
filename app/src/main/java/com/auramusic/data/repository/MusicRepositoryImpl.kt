@@ -1,5 +1,6 @@
 package com.auramusic.data.repository
 
+import com.auramusic.models.ImportedPlaylist
 import com.auramusic.models.SearchFilter
 import com.auramusic.models.Song
 import com.auramusic.network.InnerTubeClient
@@ -18,4 +19,7 @@ class MusicRepositoryImpl @Inject constructor(
 
     override suspend fun suggestions(query: String): List<String> =
         innerTube.suggestions(query)
+
+    override suspend fun playlist(link: String): Result<ImportedPlaylist> =
+        runCatching { innerTube.playlist(link) }
 }

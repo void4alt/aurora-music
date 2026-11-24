@@ -31,6 +31,7 @@ import com.auramusic.R
 import com.auramusic.models.SearchFilter
 import com.auramusic.player.PlayerViewModel
 import com.auramusic.presentation.components.AuroraBackground
+import com.auramusic.presentation.components.AddToPlaylistButton
 import com.auramusic.presentation.components.SectionHeader
 import com.auramusic.presentation.components.SongRow
 
@@ -124,7 +125,13 @@ fun SearchScreen(playerViewModel: PlayerViewModel) {
             }
             LazyColumn {
                 items(results, key = { it.id }) { song ->
-                    SongRow(song.title, song.artist, song.thumbnailUrl, song.durationMs) {
+                    SongRow(
+                        song.title,
+                        song.artist,
+                        song.thumbnailUrl,
+                        song.durationMs,
+                        trailing = { AddToPlaylistButton(song) }
+                    ) {
                         playerViewModel.play(song, results)
                     }
                 }

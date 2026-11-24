@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.auramusic.models.PlaylistWithSongs
 import com.auramusic.models.Song
 import com.auramusic.repository.LibraryRepository
+import com.auramusic.repository.MusicRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -20,7 +21,8 @@ import javax.inject.Inject
 
 @HiltViewModel
 class LibraryViewModel @Inject constructor(
-    private val libraryRepository: LibraryRepository
+    private val libraryRepository: LibraryRepository,
+    private val musicRepository: MusicRepository
 ) : ViewModel() {
 
     val playlists = libraryRepository.observePlaylists()
@@ -99,5 +101,26 @@ class LibraryViewModel @Inject constructor(
 
     fun clearHistory() {
         viewModelScope.launch { libraryRepository.clearHistory() }
+    }
+
+    fun importPlaylist(link: String) {
+        viewModelScope.launch {
+            if (link.isBlank()) {
+                _message.tryEmit("Paste a YouTube playlist link")
+                return@launch
+            }
+            runCatching { musicRepository.playlist(link).getOrThrow() }
+                .onSuccess { imported ->
+                    if (imported.songs.isEmpty()) {
+                        _message.tryEmit("No tracks found in that playlist")
+                    } else {
+                        val id = libraryRepository.createPlaylist(imported.name)
+                        imported.songs.forEach { libraryRepository.addSongToPlaylist(id, it) }
+                        _message.tryEmit("Imported ${imported.songs.size} songs into ${imported.name}")
+                        selectPlaylist(id)
+                    }
+                }
+                .onFailure { _message.tryEmit(it.message ?: "Could not import that playlist") }
+        }
     }
 }

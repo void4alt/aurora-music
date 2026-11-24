@@ -16,12 +16,15 @@ private const val KEY_VIDEO_ID = "videoId"
 private const val KEY_MEDIA_URL = "mediaUrl"
 private const val KEY_SOURCE = "source"
 
-/** Custom scheme resolved to a real audio URL by the playback data source. */
-const val STREAM_SCHEME = "aurastream"
+/** https-looking placeholder so ExoPlayer always treats items as progressive media. */
+const val STREAM_HOST = "auramusic.invalid"
+const val STREAM_USER_AGENT =
+    "com.google.android.youtube/20.10.38 (Linux; U; Android 11) gzip"
 
 fun Song.streamUri(): Uri? =
     mediaUrl?.takeIf { it.isNotBlank() }?.let(Uri::parse)
-        ?: videoId?.takeIf { it.isNotBlank() }?.let { Uri.parse("$STREAM_SCHEME://yt/$it") }
+        ?: videoId?.takeIf { it.isNotBlank() }
+            ?.let { Uri.parse("https://$STREAM_HOST/yt/$it") }
 
 fun Song.toMediaItem(): MediaItem {
     val extras = Bundle().apply {

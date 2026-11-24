@@ -9,6 +9,7 @@ import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import com.auramusic.models.PlayerUiState
 import com.auramusic.models.Song
+import com.auramusic.data.StreamResolver
 import com.auramusic.repository.LibraryRepository
 import com.auramusic.settings.SettingsDataStore
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -29,7 +30,8 @@ import javax.inject.Inject
 class PlayerViewModel @Inject constructor(
     private val connection: MediaControllerConnection,
     private val library: LibraryRepository,
-    private val settings: SettingsDataStore
+    private val settings: SettingsDataStore,
+    private val streamResolver: StreamResolver
 ) : ViewModel() {
 
     val controller = connection.controller
@@ -46,6 +48,7 @@ class PlayerViewModel @Inject constructor(
     private var playerListener: Player.Listener? = null
     private var ticker: Job? = null
     private var pendingPlay: Pair<Song, List<Song>>? = null
+    private var retryCount = 0
 
     init {
         viewModelScope.launch {
@@ -62,13 +65,42 @@ class PlayerViewModel @Inject constructor(
                         if (isPlaying) startTicker() else ticker?.cancel()
                     }
 
-                    override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) = refresh()
+                    override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                        retryCount = 0
+                        refresh()
+                    }
                     override fun onPlaybackStateChanged(playbackState: Int) = refresh()
                     override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) = refresh()
                     override fun onRepeatModeChanged(repeatMode: Int) = refresh()
                     override fun onPlaybackParametersChanged(playbackParameters: androidx.media3.common.PlaybackParameters) = refresh()
                     override fun onPlayerError(error: PlaybackException) {
-                        _message.tryEmit("Playback failed: ${error.message ?: "unknown error"}")
+                        val current = ctrl.currentMediaItem?.toSong()
+                        val id = current?.videoId
+                        if (id != null && retryCount < 1) {
+                            retryCount++
+                            streamResolver.invalidate(id)
+                            viewModelScope.launch {
+                                val stream = streamResolver.resolve(id).getOrNull()
+                                if (stream != null && current != null) {
+                                    val index = ctrl.currentMediaItemIndex.coerceAtLeast(0)
+                                    val position = ctrl.currentPosition
+                                    val items = (0 until ctrl.mediaItemCount).map { i ->
+                                        ctrl.getMediaItemAt(i)
+                                    }.toMutableList()
+                                    if (index < items.size) {
+                                        items[index] = current.copy(mediaUrl = stream.url).toMediaItem()
+                                    }
+                                    ctrl.setMediaItems(items, index, position)
+                                    ctrl.prepare()
+                                    ctrl.play()
+                                    _message.tryEmit("Reconnected — playing now")
+                                } else {
+                                    _message.tryEmit("Playback failed: ${error.message ?: "source error"}")
+                                }
+                            }
+                        } else {
+                            _message.tryEmit("Playback failed: ${error.message ?: "source error"}")
+                        }
                         refresh()
                     }
                 }
@@ -98,11 +130,23 @@ class PlayerViewModel @Inject constructor(
             _message.tryEmit("Connecting player…")
             return
         }
-        startPlayback(ctrl, song, queue)
+        viewModelScope.launch {
+            val resolved = song.videoId?.let { streamResolver.resolve(it).getOrNull() }
+            if (song.videoId != null && resolved == null) {
+                _message.tryEmit("Stream unavailable — trying an alternate source")
+            }
+            retryCount = 0
+            startPlayback(
+                ctrl = ctrl,
+                song = resolved?.let { song.copy(mediaUrl = it.url) } ?: song,
+                queue = queue
+            )
+        }
     }
 
     private fun startPlayback(ctrl: MediaController, song: Song, queue: List<Song>) {
         val playable = queue.filter { it.isPlayableInApp }
+            .map { if (it.id == song.id) song else it }
         if (playable.isEmpty()) {
             _externalPlay.tryEmit(song)
             return

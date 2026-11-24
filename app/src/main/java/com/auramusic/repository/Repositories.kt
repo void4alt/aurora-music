@@ -1,5 +1,6 @@
 package com.auramusic.repository
 
+import com.auramusic.models.ImportedPlaylist
 import com.auramusic.models.Playlist
 import com.auramusic.models.PlaylistWithSongs
 import com.auramusic.models.SearchFilter
@@ -10,6 +11,7 @@ interface MusicRepository {
     suspend fun search(query: String, filter: SearchFilter): Result<List<Song>>
     suspend fun trending(): Result<List<Song>>
     suspend fun suggestions(query: String): List<String>
+    suspend fun playlist(link: String): Result<ImportedPlaylist>
 }
 
 interface LibraryRepository {

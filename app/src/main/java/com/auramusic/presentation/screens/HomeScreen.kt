@@ -16,6 +16,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.auramusic.R
 import com.auramusic.player.PlayerViewModel
 import com.auramusic.presentation.components.AuroraBackground
+import com.auramusic.presentation.components.AddToPlaylistButton
 import com.auramusic.presentation.components.HomeHero
 import com.auramusic.presentation.components.SectionHeader
 import com.auramusic.presentation.components.SongRow
@@ -39,7 +40,8 @@ fun HomeScreen(playerViewModel: PlayerViewModel) {
                         subtitle = song.artist,
                         thumbnailUrl = song.thumbnailUrl,
                         durationMs = song.durationMs,
-                        index = index
+                        index = index,
+                        trailing = { AddToPlaylistButton(song) }
                     ) {
                         playerViewModel.play(song, recent)
                     }
@@ -53,7 +55,8 @@ fun HomeScreen(playerViewModel: PlayerViewModel) {
                         subtitle = song.artist,
                         thumbnailUrl = song.thumbnailUrl,
                         durationMs = song.durationMs,
-                        index = index
+                        index = index,
+                        trailing = { AddToPlaylistButton(song) }
                     ) {
                         playerViewModel.play(song, favorites)
                     }
@@ -76,7 +79,8 @@ fun HomeScreen(playerViewModel: PlayerViewModel) {
                         subtitle = song.artist,
                         thumbnailUrl = song.thumbnailUrl,
                         durationMs = song.durationMs,
-                        index = index
+                        index = index,
+                        trailing = { AddToPlaylistButton(song) }
                     ) {
                         playerViewModel.play(song, trending)
                     }

@@ -2,6 +2,7 @@ package com.auramusic.data
 
 import com.auramusic.network.AudioStream
 import com.auramusic.network.InnerTubeClient
+import com.auramusic.player.STREAM_USER_AGENT
 import com.google.gson.Gson
 import com.google.gson.JsonArray
 import com.google.gson.JsonObject
@@ -80,6 +81,10 @@ class StreamResolver @Inject constructor(
             withTimeoutOrNull(timeoutMs) { resolve(videoId).getOrNull() }
         }
 
+    fun invalidate(videoId: String) {
+        cache.remove(videoId)
+    }
+
     private fun store(stream: AudioStream): AudioStream {
         cache[stream.videoId] = Cached(stream, System.currentTimeMillis() + CACHE_TTL_MS)
         return stream
@@ -102,6 +107,7 @@ class StreamResolver @Inject constructor(
             val request = Request.Builder()
                 .url(stream.url)
                 .header("Range", "bytes=0-2047")
+                .header("User-Agent", STREAM_USER_AGENT)
                 .build()
             fastClient.newCall(request).execute().use { response ->
                 response.isSuccessful || response.code == 206

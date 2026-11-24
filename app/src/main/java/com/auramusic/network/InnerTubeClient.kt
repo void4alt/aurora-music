@@ -1,5 +1,6 @@
 package com.auramusic.network
 
+import com.auramusic.models.ImportedPlaylist
 import com.auramusic.models.SearchFilter
 import com.auramusic.models.Song
 import com.auramusic.models.SongSource
@@ -177,6 +178,123 @@ class InnerTubeClient @Inject constructor(
         emptyList()
     }
 
+    /** Imports a YouTube playlist (or a single video link) as a list of playable songs. */
+    suspend fun playlist(link: String): ImportedPlaylist = withContext(Dispatchers.IO) {
+        val input = link.trim()
+        val playlistId = Regex("[?&]list=([a-zA-Z0-9_-]{8,})")
+            .find(input)?.groupValues?.get(1)
+            ?: input.takeIf { it.matches(Regex("[a-zA-Z0-9_-]{8,}")) }
+
+        if (playlistId != null) {
+            for (spec in listOf(android, web)) {
+                val imported = browsePlaylist(spec, playlistId)
+                if (imported != null && imported.songs.isNotEmpty()) {
+                    return@withContext imported
+                }
+            }
+        }
+
+        val videoId = Regex("(?:v=|youtu\\.be/|/embed/|/shorts/)([a-zA-Z0-9_-]{11})")
+            .find(input)?.groupValues?.get(1)
+            ?: input.takeIf { it.matches(Regex("[a-zA-Z0-9_-]{11}")) }
+        if (videoId != null) {
+            video(videoId)?.let { return@withContext ImportedPlaylist(it.title, listOf(it)) }
+        }
+        error("No playlist or video link found in that text")
+    }
+
+    /**
+     * Walks a playlist's browse response plus continuation pages. Android returns classic
+     * `playlistVideoRenderer` items; Web returns `lockupViewModel` items, so both are parsed.
+     */
+    private fun browsePlaylist(spec: ClientSpec, playlistId: String): ImportedPlaylist? {
+        val body = JsonObject().apply {
+            add("context", buildContext(spec))
+            addProperty("browseId", "VL$playlistId")
+        }
+        val first = runCatching { post("browse", body, spec) }.getOrNull() ?: return null
+        val songs = mutableListOf<Song>()
+        val seen = LinkedHashSet<String>()
+        var continuation: String? = null
+        repeat(MAX_PLAYLIST_PAGES) { page ->
+            val response = if (page == 0) first else {
+                val next = JsonObject().apply {
+                    add("context", buildContext(spec))
+                    addProperty("continuation", continuation ?: return@repeat)
+                }
+                runCatching { post("browse", next, spec) }.getOrNull() ?: return@repeat
+            }
+            val items = if (spec == android) {
+                collect(response, "playlistVideoRenderer").mapNotNull { it.toSong() }
+            } else {
+                collect(response, "lockupViewModel").mapNotNull { it.lockupToSong() }
+            }
+            items.forEach { song ->
+                val key = song.videoId ?: song.id
+                if (seen.add(key)) songs += song
+            }
+            continuation = collect(response, "nextContinuationData")
+                .firstOrNull()?.str("continuation")
+            if (continuation.isNullOrBlank() || songs.isEmpty() && page > 0) return@repeat
+        }
+        if (songs.isEmpty()) return null
+        val title = findString(first, "pageTitle")
+            ?: collect(first, "playlistHeaderRenderer").firstOrNull()?.textOf("title")
+            ?: collect(first, "playlistRenderer").firstOrNull()?.textOf("title")
+            ?: "Imported playlist"
+        return ImportedPlaylist(title, songs)
+    }
+
+    /** Converts a Web `lockupViewModel` playlist item into a song. */
+    private fun JsonObject.lockupToSong(): Song? {
+        val metadata = obj("metadata")?.obj("lockupMetadataViewModel") ?: return null
+        val videoId = str("contentId")
+            ?.takeIf { it.matches(Regex("[a-zA-Z0-9_-]{11}")) }
+            ?: str("videoId")
+            ?: return null
+        val title = metadata.textOf("title") ?: return null
+        val artist = metadata.obj("metadata")
+            ?.obj("contentMetadataViewModel")
+            ?.arr("metadataRows")
+            ?.firstOrNull()?.asJsonObject
+            ?.arr("metadataParts")
+            ?.firstOrNull()?.asJsonObject
+            ?.textOf("text") ?: "Unknown artist"
+        val thumbnail = collect(this, "thumbnailViewModel")
+            .firstOrNull()?.obj("image")?.arr("sources")
+            ?.firstOrNull()?.asJsonObject?.str("url")
+        return Song(
+            id = "yt_$videoId",
+            title = title,
+            artist = artist,
+            thumbnailUrl = thumbnail,
+            durationMs = 0L,
+            videoId = videoId,
+            source = SongSource.YOUTUBE
+        )
+    }
+
+    private suspend fun video(videoId: String): Song? {
+        val body = JsonObject().apply {
+            add("context", buildContext(web))
+            addProperty("videoId", videoId)
+        }
+        val response = runCatching { post("player", body, web, withKey = false) }.getOrNull()
+            ?: return null
+        val details = response.obj("videoDetails") ?: return null
+        val id = details.str("videoId") ?: videoId
+        return Song(
+            id = "yt_$id",
+            title = details.str("title") ?: id,
+            artist = details.str("author") ?: "Unknown artist",
+            thumbnailUrl = details.obj("thumbnail")?.arr("thumbnails")
+                ?.lastOrNull()?.asJsonObject?.str("url"),
+            durationMs = details.str("lengthSeconds")?.toLongOrNull()?.times(1000L) ?: 0L,
+            videoId = id,
+            source = SongSource.YOUTUBE
+        )
+    }
+
     private fun parseAudioStreams(root: JsonObject, videoId: String): List<AudioStream> {
         val streaming = root.obj("streamingData") ?: return emptyList()
         val duration = root.obj("videoDetails")?.str("lengthSeconds")?.toLongOrNull()?.times(1000L) ?: 0L
@@ -241,6 +359,20 @@ class InnerTubeClient @Inject constructor(
             check(response.isSuccessful) { "InnerTube $path failed with HTTP ${response.code}" }
             return gson.fromJson(text, JsonObject::class.java)
         }
+    }
+
+    private fun findString(root: JsonElement, key: String): String? {
+        when {
+            root.isJsonObject -> {
+                val obj = root.asJsonObject
+                obj.str(key)?.let { return it }
+                obj.entrySet().forEach { (name, child) ->
+                    if (name != key) findString(child, key)?.let { return it }
+                }
+            }
+            root.isJsonArray -> root.asJsonArray.forEach { findString(it, key)?.let { return it } }
+        }
+        return null
     }
 
     private fun collect(root: JsonElement, key: String): List<JsonObject> {
@@ -310,6 +442,7 @@ class InnerTubeClient @Inject constructor(
     private companion object {
         const val API_BASE = "https://www.youtube.com/youtubei/v1/"
         const val PUBLIC_WEB_KEY = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8"
+        const val MAX_PLAYLIST_PAGES = 12
         val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
     }
 }
