@@ -11,7 +11,7 @@ Aurora does **not** depend on your own YouTube Data API key and does **not** hav
 - **No ads** — direct audio streams are requested and played; the ad-laden web/iframe player is never used.
 - **No key, no quota, no WebView, no YouTube app handoff.** Background playback, notification and lock-screen controls all work.
 
-Resolved URLs are cached for one hour. Every load — including queue transitions — goes through a `ResolvingDataSource`, so no MediaItem ever carries a stale audio URL. Stream discovery and URL validation run in parallel, and the player self-heals on error by invalidating the stream and reloading the track. The "Reconnected" message is only shown once playback actually resumes.
+Resolved URLs are cached for one hour. Every load — including queue transitions — goes through a `ResolvingDataSource`, so no MediaItem ever carries a stale audio URL. Stream discovery and URL validation run in parallel, and the player fails over through every validated audio URL (then Piped/Invidious mirrors) when one source dies. The "Reconnected" message is only shown once playback actually resumes; a final failure includes the Media3 error code.
 
 ## Look and feel
 

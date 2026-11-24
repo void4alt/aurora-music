@@ -19,8 +19,8 @@ import androidx.media3.session.MediaSessionService
 import com.auramusic.data.StreamResolver
 import com.auramusic.player.STREAM_HOST
 import com.auramusic.player.STREAM_USER_AGENT
+import com.auramusic.player.toMediaItem
 import com.auramusic.player.toSong
-import com.auramusic.player.toRetryMediaItem
 import com.auramusic.presentation.MainActivity
 import com.auramusic.settings.SettingsDataStore
 import dagger.hilt.android.AndroidEntryPoint
@@ -32,6 +32,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -50,7 +51,7 @@ class AuroraPlaybackService : MediaSessionService() {
     private var session: MediaSession? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var sleepJob: Job? = null
-    private val retriedKeys = mutableSetOf<String>()
+    private val attemptsByKey = mutableMapOf<String, Int>()
     private var pendingReconnect = false
     private var lastQueueKey: String? = null
 
@@ -69,13 +70,27 @@ class AuroraPlaybackService : MediaSessionService() {
                 val song = item?.toSong()
                 val videoId = song?.videoId
                 val key = item?.mediaId ?: videoId ?: "unknown"
-                if (videoId != null && retriedKeys.add(key)) {
-                    pendingReconnect = true
-                    streamResolver.invalidate(videoId)
-                    retryCurrent()
-                } else {
+                val attempts = attemptsByKey[key] ?: 0
+                val detail = "Playback failed (${error.errorCode}): ${error.message ?: "source error"}"
+                if (videoId == null || attempts >= MAX_ATTEMPTS) {
                     pendingReconnect = false
-                    playbackStatus.emit("Playback failed: ${error.message ?: "source error"}")
+                    playbackStatus.emit(detail)
+                    return
+                }
+                attemptsByKey[key] = attempts + 1
+                pendingReconnect = true
+                scope.launch(Dispatchers.IO) {
+                    val stream = streamResolver.nextAlternative(videoId, song?.mediaUrl)
+                        ?: streamResolver.loadFallbacks(videoId)
+                            .let { streamResolver.nextAlternative(videoId, null) }
+                    withContext(Dispatchers.Main) {
+                        if (stream != null) {
+                            applyStream(stream.url)
+                        } else {
+                            pendingReconnect = false
+                            playbackStatus.emit(detail)
+                        }
+                    }
                 }
             }
 
@@ -91,7 +106,7 @@ class AuroraPlaybackService : MediaSessionService() {
                 val key = queueKey()
                 if (key != lastQueueKey) {
                     lastQueueKey = key
-                    retriedKeys.clear()
+                    attemptsByKey.clear()
                     pendingReconnect = false
                 }
             }
@@ -128,13 +143,12 @@ class AuroraPlaybackService : MediaSessionService() {
     private fun queueKey(): String =
         (0 until player.mediaItemCount).joinToString(",") { player.getMediaItemAt(it).mediaId }
 
-    private fun retryCurrent() {
+    private fun applyStream(url: String) {
         val index = player.currentMediaItemIndex.coerceAtLeast(0)
+        val current = player.currentMediaItem?.toSong() ?: return
         val items = (0 until player.mediaItemCount).map { i ->
-            val item = player.getMediaItemAt(i)
-            if (i == index) item.toSong()?.toRetryMediaItem() ?: item else item
+            if (i == index) current.copy(mediaUrl = url).toMediaItem() else player.getMediaItemAt(i)
         }
-        if (items.isEmpty()) return
         player.setMediaItems(items, index, player.currentPosition.coerceAtLeast(0L))
         player.prepare()
         player.play()
@@ -149,6 +163,8 @@ class AuroraPlaybackService : MediaSessionService() {
         val httpFactory = DefaultHttpDataSource.Factory()
             .setUserAgent(STREAM_USER_AGENT)
             .setAllowCrossProtocolRedirects(true)
+            .setConnectTimeoutMs(15_000)
+            .setReadTimeoutMs(20_000)
         val base = DefaultDataSource.Factory(this, httpFactory)
         return ResolvingDataSource.Factory(base) { dataSpec ->
             val uri = dataSpec.uri
@@ -172,5 +188,9 @@ class AuroraPlaybackService : MediaSessionService() {
         }
         session = null
         super.onDestroy()
+    }
+
+    private companion object {
+        const val MAX_ATTEMPTS = 8
     }
 }
